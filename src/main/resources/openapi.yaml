@@ -1,0 +1,1151 @@
+openapi: 3.0.3
+info:
+  title: Document Authorization API
+  version: 1.0.0
+  description: |
+    RBAC + Team Role + ABAC + ACL(PBAC 기반) 구조를 가진 문서 인가 데모 API.
+    - 글로벌 RBAC: users / roles / user_roles
+    - 팀/조직: teams / team_members
+    - 문서: documents
+    - ACL(문서별 권한): document_permissions
+    - 감사 로그: audit_logs
+    - 인증: refresh_tokens
+
+servers:
+  - url: http://localhost:8080
+    description: Local dev server
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Roles
+  - name: Teams
+  - name: Documents
+  - name: DocumentPermissions
+  - name: AuditLogs
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # =====================
+    # 공통 래핑 응답
+    # =====================
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: 요청 성공 여부
+        message:
+          type: string
+          nullable: true
+          description: 추가 메시지 (없으면 null)
+        data:
+          nullable: true
+          description: 실제 응답 데이터 (엔드포인트별로 타입 상이)
+
+    # =====================
+    # Auth
+    # =====================
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          description: 액세스 토큰 만료까지 남은 시간(초)
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    # =====================
+    # User
+    # =====================
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        department:
+          type: string
+          nullable: true
+        jobLevel:
+          type: string
+          nullable: true
+        securityGrade:
+          type: integer
+          format: int32
+          description: "1~5, 숫자가 클수록 더 민감한 문서 접근 가능"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MeResponse:
+      allOf:
+        - $ref: '#/components/schemas/UserResponse'
+
+    UpdateMeRequest:
+      type: object
+      properties:
+        department:
+          type: string
+          nullable: true
+        jobLevel:
+          type: string
+          nullable: true
+        securityGrade:
+          type: integer
+          format: int32
+          nullable: true
+      description: |
+        내 프로필(ABAC 속성) 일부 수정 요청.
+        필드는 선택적으로 보낼 수 있음.
+
+    # =====================
+    # Role / UserRole
+    # =====================
+    RoleResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: "예: SYSTEM_ADMIN, ORG_ADMIN, USER"
+        description:
+          type: string
+          nullable: true
+
+    RoleRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    UpdateUserRolesRequest:
+      type: object
+      required: [roleIds]
+      properties:
+        roleIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: "해당 유저에게 부여할 글로벌 Role ID 목록"
+
+    # =====================
+    # Team / TeamMember
+    # =====================
+    TeamResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TeamRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    TeamMemberResponse:
+      type: object
+      properties:
+        teamId:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+        roleInTeam:
+          type: string
+          description: "OWNER, MANAGER, MEMBER"
+        createdAt:
+          type: string
+          format: date-time
+
+    TeamMemberRequest:
+      type: object
+      required: [userId, roleInTeam]
+      properties:
+        userId:
+          type: integer
+          format: int64
+        roleInTeam:
+          type: string
+          description: "OWNER, MANAGER, MEMBER"
+
+    # =====================
+    # Document
+    # =====================
+    DocumentResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        content:
+          type: string
+        ownerTeamId:
+          type: integer
+          format: int64
+        authorId:
+          type: integer
+          format: int64
+        classification:
+          type: string
+          description: "PUBLIC, INTERNAL, CONFIDENTIAL, SECRET"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DocumentRequest:
+      type: object
+      required: [title, content, ownerTeamId, classification]
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        ownerTeamId:
+          type: integer
+          format: int64
+          description: "문서 소유 팀 ID"
+        classification:
+          type: string
+          description: "PUBLIC, INTERNAL, CONFIDENTIAL, SECRET"
+
+    # 검색 조건은 쿼리스트링으로 사용 (DocumentSearchCondition 참조)
+    DocumentSearchResult:
+      type: object
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentResponse'
+
+    # =====================
+    # Document Permission (ACL / PBAC)
+    # =====================
+    DocumentPermissionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        documentId:
+          type: integer
+          format: int64
+        granteeType:
+          type: string
+          description: "USER, TEAM, ROLE"
+        granteeId:
+          type: integer
+          format: int64
+        action:
+          type: string
+          description: "예: document:read, document:write"
+        effect:
+          type: string
+          description: "PERMIT 또는 DENY"
+        createdAt:
+          type: string
+          format: date-time
+
+    DocumentPermissionRequest:
+      type: object
+      required: [granteeType, granteeId, action, effect]
+      properties:
+        granteeType:
+          type: string
+          description: "USER, TEAM, ROLE"
+        granteeId:
+          type: integer
+          format: int64
+        action:
+          type: string
+        effect:
+          type: string
+          description: "PERMIT 또는 DENY"
+
+    # =====================
+    # Audit Log
+    # =====================
+    AuditLogResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        actorId:
+          type: integer
+          format: int64
+        action:
+          type: string
+        resourceType:
+          type: string
+          description: "DOCUMENT, TEAM, USER 등"
+        resourceId:
+          type: integer
+          format: int64
+        decision:
+          type: string
+          description: "PERMIT, DENY"
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        extra:
+          type: object
+          nullable: true
+          description: "추가 컨텍스트/정책 평가 결과(JSON)"
+
+    AuditLogListResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogResponse'
+
+paths:
+  # =====================
+  # Auth
+  # =====================
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: 로그인 (JWT 발급)
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TokenResponse'
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: 액세스 토큰 재발급
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: 토큰 재발급 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TokenResponse'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: 로그아웃 (리프레시 토큰 폐기)
+      operationId: logout
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '200':
+          description: 로그아웃 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # =====================
+  # Users
+  # =====================
+  /api/users/me:
+    get:
+      tags: [Users]
+      summary: 내 프로필 조회
+      operationId: getMe
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 내 프로필 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MeResponse'
+    patch:
+      tags: [Users]
+      summary: 내 프로필 일부 수정
+      operationId: updateMe
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        '200':
+          description: 수정된 내 프로필
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MeResponse'
+
+  /api/users/{userId}:
+    get:
+      tags: [Users]
+      summary: 특정 사용자 조회 (관리자용)
+      operationId: getUserById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 사용자 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserResponse'
+
+  # =====================
+  # Roles / UserRoles
+  # =====================
+  /api/roles:
+    get:
+      tags: [Roles]
+      summary: 전체 Role 목록 조회
+      operationId: listRoles
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Role 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RoleResponse'
+    post:
+      tags: [Roles]
+      summary: Role 생성
+      operationId: createRole
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleRequest'
+      responses:
+        '201':
+          description: 생성된 Role
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RoleResponse'
+
+  /api/users/{userId}/roles:
+    get:
+      tags: [Roles]
+      summary: 특정 유저의 글로벌 Role 조회
+      operationId: getUserRoles
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 유저에 부여된 Role 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RoleResponse'
+    put:
+      tags: [Roles]
+      summary: 특정 유저의 글로벌 Role 변경
+      operationId: updateUserRoles
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRolesRequest'
+      responses:
+        '200':
+          description: 변경된 Role 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RoleResponse'
+
+  # =====================
+  # Teams / TeamMembers
+  # =====================
+  /api/teams:
+    get:
+      tags: [Teams]
+      summary: 팀 목록 조회
+      operationId: listTeams
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 팀 이름 검색용 (선택)
+      responses:
+        '200':
+          description: 팀 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TeamResponse'
+    post:
+      tags: [Teams]
+      summary: 팀 생성
+      operationId: createTeam
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamRequest'
+      responses:
+        '201':
+          description: 생성된 팀 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TeamResponse'
+
+  /api/teams/{teamId}:
+    get:
+      tags: [Teams]
+      summary: 팀 상세 조회
+      operationId: getTeamById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 팀 상세 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TeamResponse'
+
+  /api/teams/{teamId}/members:
+    get:
+      tags: [Teams]
+      summary: 팀 멤버 목록 조회
+      operationId: listTeamMembers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 팀 멤버 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TeamMemberResponse'
+    post:
+      tags: [Teams]
+      summary: 팀 멤버 추가
+      operationId: addTeamMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberRequest'
+      responses:
+        '201':
+          description: 추가된 팀 멤버 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TeamMemberResponse'
+
+  /api/teams/{teamId}/members/{userId}:
+    patch:
+      tags: [Teams]
+      summary: 팀 멤버 역할 변경
+      operationId: updateTeamMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberRequest'
+      responses:
+        '200':
+          description: 수정된 팀 멤버 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TeamMemberResponse'
+    delete:
+      tags: [Teams]
+      summary: 팀 멤버 제거
+      operationId: removeTeamMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 삭제 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # =====================
+  # Documents
+  # =====================
+  /api/documents:
+    get:
+      tags: [Documents]
+      summary: 문서 목록/검색
+      operationId: searchDocuments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 제목/내용 검색 키워드
+        - name: ownerTeamId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: authorId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: classification
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "PUBLIC, INTERNAL, CONFIDENTIAL, SECRET"
+      responses:
+        '200':
+          description: 문서 검색 결과
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DocumentSearchResult'
+    post:
+      tags: [Documents]
+      summary: 문서 생성
+      operationId: createDocument
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentRequest'
+      responses:
+        '201':
+          description: 생성된 문서 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DocumentResponse'
+
+  /api/documents/{documentId}:
+    get:
+      tags: [Documents]
+      summary: 문서 단건 조회
+      operationId: getDocumentById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 문서 상세
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DocumentResponse'
+    put:
+      tags: [Documents]
+      summary: 문서 수정
+      operationId: updateDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentRequest'
+      responses:
+        '200':
+          description: 수정된 문서 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DocumentResponse'
+    delete:
+      tags: [Documents]
+      summary: 문서 삭제
+      operationId: deleteDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 삭제 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # =====================
+  # Document Permissions (ACL / PBAC)
+  # =====================
+  /api/documents/{documentId}/permissions:
+    get:
+      tags: [DocumentPermissions]
+      summary: 문서 권한 목록 조회
+      operationId: listDocumentPermissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 해당 문서에 대한 ACL 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DocumentPermissionResponse'
+    post:
+      tags: [DocumentPermissions]
+      summary: 문서 권한 추가 (PERMIT/DENY)
+      operationId: addDocumentPermission
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentPermissionRequest'
+      responses:
+        '201':
+          description: 생성된 문서 권한 정보
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DocumentPermissionResponse'
+
+  /api/documents/{documentId}/permissions/{permissionId}:
+    delete:
+      tags: [DocumentPermissions]
+      summary: 문서 권한 제거
+      operationId: removeDocumentPermission
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: permissionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 삭제 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # =====================
+  # Audit Logs
+  # =====================
+  /api/audit/logs:
+    get:
+      tags: [AuditLogs]
+      summary: 감사 로그 조회
+      operationId: listAuditLogs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actorId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: resourceType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: resourceId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: decision
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "PERMIT, DENY"
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: 조회 시작 시각
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: 조회 종료 시각
+      responses:
+        '200':
+          description: 감사 로그 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AuditLogListResponse'

@@ -1,4 +1,4 @@
-package io.security.portfolio.domian;
+package io.security.portfolio.domain;
 
 import jakarta.persistence.*;
 import lombok.Getter;

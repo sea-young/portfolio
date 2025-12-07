@@ -8,6 +8,16 @@ group = 'io.security'
 version = '0.0.1-SNAPSHOT'
 description = 'portfolio'
 
+sourceSets {
+    main {
+        java {
+            // "src/main/gen" 까지만 쓰면 안 되고,
+            // 실제 패키지(io.security...)가 시작되는 바로 윗 폴더까지 적어줘야 합니다.
+            srcDir 'src/main/gen/src/main/java'
+        }
+    }
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
@@ -35,6 +45,28 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-thymeleaf-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // 1. Validation (스프링 부트 스타터에 보통 포함됨, 없으면 추가)
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // 2. Swagger 어노테이션 (필수)
+    implementation 'io.swagger.core.v3:swagger-annotations:2.2.22'
+    implementation 'org.openapitools:jackson-databind-nullable:0.2.6'
+
+    // JPA (jakarta.persistence, spring data jpa)
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    // Lombok (Getter, NoArgsConstructor 등)
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // DB 드라이버 (H2 또는 MySQL 등 사용하는 DB에 맞춰 추가)
+    runtimeOnly 'com.h2database:h2'
+    // 또는 runtimeOnly 'com.mysql:mysql-connector-j'
+
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 }
 
 tasks.named('test') {
